@@ -22,20 +22,6 @@ type Job struct {
 // Total maximum attempts = 1 + len(retryDelays) = 4.
 var retryDelays = []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
 
-// defaultRetryDelays holds the original delays so SetRetryDelaysForTest can restore them.
-var defaultRetryDelays = retryDelays
-
-// SetRetryDelaysForTest replaces the retry schedule for testing.
-// Pass nil to restore the production defaults.
-// Must not be called concurrently with RunWorker.
-func SetRetryDelaysForTest(delays []time.Duration) {
-	if delays == nil {
-		retryDelays = defaultRetryDelays
-	} else {
-		retryDelays = delays
-	}
-}
-
 // RunWorker reads jobs from the channel and forwards each one to targetURL.
 // On failure it waits according to retryDelays before retrying.
 // After all retries are exhausted the job is logged and discarded.
@@ -59,16 +45,17 @@ func deliver(client *http.Client, job Job, targetURL string, logger *log.Logger)
 		return
 	}
 
+	maxRetries := len(retryDelays)
 	for i, delay := range retryDelays {
-		logger.Printf("forwarding: attempt %d failed for employee=%s, retrying in %s", i+1, job.EmployeeID, delay)
+		logger.Printf("forwarding: retry %d of %d for employee=%s, waiting %s", i+1, maxRetries, job.EmployeeID, delay)
 		time.Sleep(delay)
 		if tryPost(client, targetURL, body) {
-			logger.Printf("forwarding: delivered employee=%s minutes=%d (attempt %d)", job.EmployeeID, job.MinutesWorked, i+2)
+			logger.Printf("forwarding: delivered employee=%s minutes=%d (on retry %d)", job.EmployeeID, job.MinutesWorked, i+1)
 			return
 		}
 	}
 
-	logger.Printf("forwarding: discarding job for employee=%s after %d attempts", job.EmployeeID, 1+len(retryDelays))
+	logger.Printf("forwarding: discarding job for employee=%s after 1 attempt and %d retries", job.EmployeeID, maxRetries)
 }
 
 // tryPost posts body to targetURL and returns true on HTTP 2xx, false otherwise.

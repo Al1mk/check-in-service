@@ -2,8 +2,6 @@
 
 A Go HTTP service that records employee check-in and check-out events from factory card readers, tracks active shifts in memory, calculates worked minutes on check-out, and forwards completed shift data asynchronously to an external system.
 
-**Status:** Phase 4 complete — forwarding worker and mock endpoint implemented.
-
 ---
 
 ## Package structure
@@ -46,7 +44,7 @@ Records a check-in or check-out event from a factory card reader.
 }
 ```
 
-`shift_minutes` — duration of the just-closed shift in whole minutes.  
+`shift_minutes` — duration of the just-closed shift, truncated to whole minutes.  
 `week_minutes` — running total for the Monday–Sunday calendar week (in factory-local time) that contains the shift.
 
 **Error responses** — all errors return `Content-Type: application/json` with an `"error"` key:
@@ -85,3 +83,15 @@ go test ./...   # all unit tests, no external dependencies
 **Forwarding durability** — this implementation intentionally keeps forwarding best-effort. The HTTP response reflects committed local state; asynchronous delivery to the external system may be lost if the process restarts or the queue fills. A production design would close this gap with a durable queue or a transactional outbox pattern so that no committed shift is ever silently dropped.
 
 **Mock endpoint** — `POST /mock/recording` returns 500 ~30 % of the time, delays 2–5 s before 200 ~20 % of the time, and returns 200 immediately ~50 % of the time. This exercises all retry paths without external infrastructure.
+
+---
+
+## AI usage disclosure
+
+I used Anthropic Claude Code as a supporting tool during this exercise.
+
+I mainly used it to speed up iteration, compare implementation ideas, and improve the clarity of the code and README. It was especially useful for thinking through trade-offs and simplifying parts of the design.
+
+I did not rely on it blindly — I reviewed all suggestions and only kept solutions I understood and could justify.
+
+No real or sensitive data was used. I would only use AI tools in cases where privacy and confidentiality requirements are fully respected.

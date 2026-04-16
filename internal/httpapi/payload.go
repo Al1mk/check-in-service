@@ -12,6 +12,10 @@ type EventRequest struct {
 }
 
 // validate checks that all required fields are present and event_type is known.
+//
+// Note on factory_location for check-out: the field is accepted and validated
+// as non-empty, but the store uses the timezone recorded at check-in for shift
+// closure and week calculation. The check-out value is not forwarded to the store.
 func (r EventRequest) validate() error {
 	switch {
 	case r.EmployeeID == "":
