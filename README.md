@@ -2,7 +2,7 @@
 
 A Go HTTP service that records employee check-in and check-out events from factory card readers, tracks active shifts in memory, calculates worked minutes on check-out, and forwards completed shift data asynchronously to an external system.
 
-**Status:** Phase 3 complete — HTTP API layer implemented.
+**Status:** Phase 4 complete — forwarding worker and mock endpoint implemented.
 
 ---
 
@@ -12,8 +12,8 @@ A Go HTTP service that records employee check-in and check-out events from facto
 internal/
   httpapi/      HTTP handlers and JSON payload types (transport boundary)
   attendance/   Domain state: open shifts and shift history (business logic)
-  forwarding/   Background worker that forwards shift data (Phase 4)
-  mock/         Fake external system handler (Phase 4)
+  forwarding/   Background worker that forwards completed shifts to the external system
+  mock/         Fake external system that randomly fails or delays to exercise retries
 ```
 
 ---
@@ -79,3 +79,9 @@ go test ./...   # all unit tests, no external dependencies
 **Week boundary** — the Monday–Sunday week is computed in factory-local time (`factory_location`), not UTC. A shift at 23:00 on a Sunday in Berlin belongs to the previous week, even if it falls on a Monday in UTC.
 
 **Missed check-out** — a second `check_in` while an active shift exists is rejected with 409. No automatic repair is performed; resolution requires an administrative process outside this service.
+
+**Forwarding** — on successful check-out the handler enqueues a `forwarding.Job` onto a buffered channel (capacity 100) using a non-blocking `select`. The 200 response confirms the shift was processed locally in the attendance store; it does not guarantee forwarding delivery. If the internal channel is full the job is logged and dropped — forwarding is best-effort in this single-process design. A single background `RunWorker` goroutine reads from the channel and POSTs to `POST /mock/recording` with a 5-second outbound timeout. On failure it retries up to 3 times with delays of 1 s, 2 s, and 4 s before logging and discarding the job.
+
+**Forwarding durability** — this implementation intentionally keeps forwarding best-effort. The HTTP response reflects committed local state; asynchronous delivery to the external system may be lost if the process restarts or the queue fills. A production design would close this gap with a durable queue or a transactional outbox pattern so that no committed shift is ever silently dropped.
+
+**Mock endpoint** — `POST /mock/recording` returns 500 ~30 % of the time, delays 2–5 s before 200 ~20 % of the time, and returns 200 immediately ~50 % of the time. This exercises all retry paths without external infrastructure.

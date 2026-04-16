@@ -4,20 +4,26 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/Al1mk/check-in-service/internal/attendance"
+	"github.com/Al1mk/check-in-service/internal/forwarding"
 )
 
 // EventHandler handles POST /events.
 type EventHandler struct {
-	store *attendance.Store
+	store  *attendance.Store
+	jobs   chan<- forwarding.Job
+	logger *log.Logger
 }
 
-// NewEventHandler constructs an EventHandler wired to the given store.
-func NewEventHandler(store *attendance.Store) *EventHandler {
-	return &EventHandler{store: store}
+// NewEventHandler constructs an EventHandler wired to the given store and job queue.
+// jobs is a send-only channel; the handler enqueues work non-blocking.
+// Pass log.Default() for logger in production.
+func NewEventHandler(store *attendance.Store, jobs chan<- forwarding.Job, logger *log.Logger) *EventHandler {
+	return &EventHandler{store: store, jobs: jobs, logger: logger}
 }
 
 // ServeHTTP validates the incoming event and updates attendance state.
@@ -63,6 +69,19 @@ func (h *EventHandler) handleCheckOut(w http.ResponseWriter, req EventRequest, h
 	if err != nil {
 		writeStoreError(w, err)
 		return
+	}
+
+	// Enqueue the forwarding job non-blocking. The shift is already committed in
+	// the store, so the HTTP response reflects local business state regardless of
+	// whether the enqueue succeeds.
+	//
+	// If the channel is full the job is logged and dropped. Forwarding is
+	// best-effort in this single-process design; a production implementation
+	// would use a durable queue or transactional outbox to eliminate this gap.
+	select {
+	case h.jobs <- forwarding.Job{EmployeeID: req.EmployeeID, MinutesWorked: shift.Minutes}:
+	default:
+		h.logger.Printf("httpapi: forwarding queue full, dropping job for employee=%s", req.EmployeeID)
 	}
 
 	resp := CheckOutResponse{
