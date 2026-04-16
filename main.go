@@ -5,21 +5,18 @@ import (
 	"net/http"
 
 	"github.com/Al1mk/check-in-service/internal/attendance"
-	"github.com/Al1mk/check-in-service/internal/forwarding"
 	"github.com/Al1mk/check-in-service/internal/httpapi"
 	"github.com/Al1mk/check-in-service/internal/mock"
 )
 
 func main() {
 	store := attendance.NewStore()
-	jobs := make(chan forwarding.Job, 100)
 
 	mux := http.NewServeMux()
-	mux.Handle("POST /events", httpapi.NewEventHandler(store, jobs))
+	mux.Handle("POST /events", httpapi.NewEventHandler(store))
 	mux.Handle("POST /mock/recording", mock.NewRecordingHandler())
 
-	// Worker and server are started here once their implementations are complete.
-	// go forwarding.RunWorker(jobs)
+	// Forwarding worker wired here in Phase 4.
 
 	addr := ":8080"
 	log.Printf("server listening on %s", addr)
